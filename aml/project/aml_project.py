@@ -10,6 +10,17 @@ trains/tests either an SVM, random forest, or CNN model
 
 TODO:
     - Finish CNN and random forests
+    - Add dev/hold-out sets
+    - Redo performance of svm with more data
+    - start with simple model, train/dev/test, print metrics (lecture 20 p2/3)
+      and plots, evalutate whats going on (overfitting, underfitting) and
+      then try different things and improve model. Then move on to more
+      advanced models like CNN. Maybe just try to test out svm and random
+      forests some more and then primarily focus on CNN
+        Need to keep tweeking and looking at dev results, then after that looks
+        good, run once on test set and show results
+    - Explain how many samples I have, and say how much was split into training,
+      dev, and test sets
     - Move formatIQTimeData into main function, no need to have it in each model
     - Make formatIQTimeData able to ingest data with various sample rates and
       resample (either upssample to downsample) to a common sample rate
@@ -19,11 +30,11 @@ Date Created:
 
 Authors:
 Rich Seibert
-Larry Xu
 """
 
 
 import sys
+import glob
 # sdr imports
 from pylab import *
 from rtlsdr import *
@@ -70,15 +81,19 @@ def formatIQTimeData(fileNames):
             data.append(dataPart[i:i+wrapSize])
         # label is first few characters on file that indicates modulation type
         fileNameStart = fileName.rfind('/')+1
-        print(fileName)
-        label = fileName[fileNameStart:fileName.find('_')]
+        # cut the entire file path out, just keep file name
+        fileNameOnly = fileName[fileNameStart:]
+        label = fileNameOnly[:fileNameOnly.find('_')]
         rowsAdded = int(len(dataPart)/wrapSize)
         targets = np.concatenate((targets, np.array([label]*rowsAdded)))
     return np.array(data), targets
 
 
-def plot(samples, time=False, phase=False, spec=True):
+def plot(fileName, time=True, phase=False, spec=True):
     samples = np.load(fileName)
+    print("++++++ NOTE: fs = 1e6 +++++++")
+    print("Number of 1k samples=", samples.shape[0]/1024)
+    print("Data type =", type(samples[0]))
     if time:
         # time domain data mag
         plt.plot(np.abs(samples))
@@ -123,7 +138,7 @@ def CNN(fileNames):
     le = preprocessing.LabelEncoder()
     le.fit(targets)
     labels = le.classes_
-    print("Running classification for the following signals:", labels)
+    print("Training and testing CNN model classification for the following signals:", labels)
     targets = le.transform(targets)
 
     reshaped = []
@@ -133,7 +148,7 @@ def CNN(fileNames):
     
     # Split data into 50% train and 50% test subsets
     x_train, x_test, y_train, y_test = train_test_split(
-        data, targets, test_size=0.5, shuffle=True)
+        data, targets, test_size=0.5, shuffle=True, random_state=42)
     
     # convert to OHE
     y_train = to_categorical(y_train)
@@ -215,6 +230,8 @@ def randomForest(fileNames):
 
 
 def SVM(fileNames):
+    print("Training and testing SVM model classification for the following signals:", labels)
+
     # reformat data recorded by sdr into 2d array where each row is 
     # one array of one type of signal data. If multiple files
     # are input it will concatenate all of them together
@@ -222,7 +239,7 @@ def SVM(fileNames):
     
     # Split data into 50% train and 50% test subsets
     X_train, X_test, y_train, y_test = train_test_split(
-        data, targets, test_size=0.5, shuffle=True)
+        data, targets, test_size=0.5, shuffle=True, random_state=42)
     
     # Create a classifier: a support vector classifier
     clf = svm.SVC(gamma=0.001)
@@ -238,8 +255,7 @@ def SVM(fileNames):
         f"{metrics.classification_report(y_test, predicted)}\n")
 
 
-def record(writeData, modId, num1k, centerFreq, plot):
-    writeData = int(writeData)
+def record(modId, num1k=4096, centerFreq, plot):
     num1k = int(num1k)
     plot = int(plot)
     # capture signal from rtl sdr
@@ -256,15 +272,14 @@ def record(writeData, modId, num1k, centerFreq, plot):
     fileName =  modId + '_' + centerFreq + '_' + string_fs + \
                 '_' + 'raw_data.npy', samples
     
-    if writeData:
-        print("Writting Data")
-        # write raw iq data to modify later if needed
-        string_fs = str(fs/1e6)+'MHz'
-        np.save(fileName)
-        
-        # don't save off spectrogram data anymore, no reason to...
-        # can just make spectrogram from raw samples
-        '''
+    print("Writting Data")
+    # write raw iq data to modify later if needed
+    string_fs = str(fs/1e6)+'MHz'
+    np.save(fileName)
+    
+    # really no reason to save off spectrogram...
+    saveSpec = False
+    if saveSpec:
         # write normalized spectrogram mag data
         f, t, Sxx = signal.spectrogram(samples, fs) #nfft=1024, defaults to 256
         dataSpectrogram = fftshift(Sxx, axes=0)
@@ -273,23 +288,12 @@ def record(writeData, modId, num1k, centerFreq, plot):
         #dataSpectrogram = 10*np.log10(dataSpectrogram)
         np.save(modId + '_' + centerFreq + '_' + string_fs + '_' + 
                'norm_spec_data.npy', dataSpectrogram)
-        '''
     
     if plot:
         plot(samples)
 
 
 if __name__ == "__main__":
-    path = "/home/rich/radio_stuff/aml_project_recordings/sdr_recordings/"
-    fileNames = ["gsm_852.038_1.0MHz_raw_data.npy",
-                 "unk_454.835_1.0MHz_raw_data.npy",
-                 "fm_100.3_1.0MHz_raw_data.npy",
-                 "unk2_905.602_1.0MHz_raw_data.npy",
-                 "nbfm_162.55_1.0MHz_raw_data.npy",
-                 "unk_454.944_1.0MHz_raw_data.npy",
-                 "fm_103.5_1.0MHz_raw_data.npy",
-                 "unk2_912_1.0MHz_raw_data.npy"]
-    fileNames = [path+x for x in fileNames]
     
     if len(sys.argv) <= 1:
         print("How to use this script:\n")
@@ -299,21 +303,23 @@ if __name__ == "__main__":
         print("--svm = train support vector machine model and test")
         print("    file names")
         print("--getdata = record raw iq data from SDR")
-        print("    writeData  - write raw iq and spectrogram data")
         print("    modulation - few character mod identifier")
         print("    num1k      - number of 1k samples to take")
         print("    centerFreq - center frequency in MHz")
         print("    plot       - show plots of just taken data")
         print("--plot = plots data from raw IQ files")
         print("    file names")
-    elif sys.argv[1] == 'svm':
-        SVM(fileNames)
-    elif sys.argv[1] == 'cnn':
-        CNN(fileNames)
-    elif sys.argv[1] == 'getdata':
-        record(*sys.argv[2:])
-    elif sys.argv[1] == 'plot':
-        fileNames = sys.argv[2:]
-        for fileName in fileNames:
-            samples = np.load(fileName)
-            plot(samples)
+    else:
+        path = sys.argv[2]
+        fileNames = glob.glob(path + "/*.npy")
+        print("Files being ran:", fileNames)
+        if sys.argv[1] == 'svm':
+            SVM(fileNames)
+        elif sys.argv[1] == 'cnn':
+            CNN(fileNames)
+        elif sys.argv[1] == 'getdata':
+            record(*sys.argv[2:])
+        elif sys.argv[1] == 'plot':
+            fileNames = sys.argv[2:]
+            for fileName in fileNames:
+                plot(fileName)
