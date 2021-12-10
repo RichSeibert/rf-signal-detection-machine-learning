@@ -1,4 +1,16 @@
-FM stations (KHz)
+Antenna length vs receive freq:
+    Large Antenna, 5 Sections, 100cm + 2cm is resonant @ ~70 MHz
+    Large Antenna, 4 Sections, 80cm + 2cm is resonant @ ~87MHz
+    Large Antenna, 3 Sections, 60cm + 2cm is resonant @ ~115 MHz
+    Large Antenna, 2 Sections, 42cm + 2cm is resonant @ ~162 MHz
+    Large Antenna, 1 Section, 23cm + 2cm is resonant @ ~ 285 MHz
+    Small Antenna, 4 Sections, 14cm + 2cm is resonant @ ~445 MHz
+    Small Antenna, 3 Sections, 11cm + 2cm is resonant @ ~550 MHz
+    Small Antenna, 2 Sections, 8cm + 2cm is resonant @ ~720MHz
+    Small Antenna, 1 Section, 5cm + 2cm is resonant @ ~1030 MHz.
+
+# everything in MHz
+FM stations
 92.3
 93.1
 93.9 (weird station, signal is off a lot of the time)
@@ -12,17 +24,54 @@ FM stations (KHz)
 105.9
 107.5
 
-AM? tones?
+tones
 144
 172.8
 174.31
 195.94
 193.31
+440.15
+561.6
+
+bursty
+461.488 - 10khz
+
+slow burst
+462.376
 
 NBFM emegency stations (robot talking)
 160.63
 162.55
 163.19
-164.47
+other nbfm
+448.594
+450.514
 
+3g (possible 3g which has 4.2 MHz bw, ofdm)
+622.5-626 (center 624.5, so 4MHz bw)
+718.5-727.5 (? 9 bw)
 
+4g? (9Mhz)
+746.5-755.5
+729.25-733.75 (? 4.5 bw)
+
+Digital Dispatch Systems [DDS] (psk)
+851.039
+854.664
+856.988
+
+Integrated Digital Enhanced Network [iDEN] (TDMA, QAM)
+854.663
+856.313
+857.313
+
+Automated Train Control System (ATCS) (fsk)
+922.751
+923.251
+923.751
+
+SCADA FSK (15) only comes one somtimes
+929.614
+927.693
+929.939
+931.535
