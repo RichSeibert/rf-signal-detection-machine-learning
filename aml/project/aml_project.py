@@ -9,10 +9,11 @@ This script ingests RF data in .npy format, and
 trains/tests either an SVM, random forest, or CNN model
 
 TODO:
+        - show performance of SVN with small, then larger data set, try adjusting
+          inputs like size from 1024 to 4096, then try feeding in phase data as well.
+          Make plots and print outs of performance.
+          Then move onto CNN, do same thing
     - Finish CNN and random forests
-    - Add dev/hold-out sets
-    - Redo performance of svm with more data
-    - Do tests with white noise added
     - start with simple model, train/dev/test, print metrics (lecture 20 p2/3)
       and plots, evalutate whats going on (overfitting, underfitting) and
       then try different things and improve model. Then move on to more
@@ -20,11 +21,6 @@ TODO:
       forests some more and then primarily focus on CNN
         Need to keep tweeking and looking at dev results, then after that looks
         good, run once on test set and show results
-    - Explain how many samples I have, and say how much was split into training,
-      dev, and test sets
-    - Move formatIQTimeData into main function, no need to have it in each model
-    - Make formatIQTimeData able to ingest data with various sample rates and
-      resample (either upssample to downsample) to a common sample rate
 
 Date Created:
 11/1/21
@@ -46,6 +42,9 @@ from scipy.fft import fftshift
 import numpy as np
 # preprocessing
 from sklearn import preprocessing
+# metrics
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import accuracy_score
 # svm
 from sklearn import datasets, svm, metrics
 from sklearn.model_selection import train_test_split
@@ -69,19 +68,25 @@ def formatIQTimeData(fileNames):
     for fileName in fileNames:
         # read in time domain data
         dataPart = np.load(fileName)
-        # TODO just using mag data, try using phase as well
         # convert to mag normalized
-        dataPart = np.abs(dataPart)
-        dataPart = dataPart / np.max(dataPart)
+        dataPartMag = np.abs(dataPart)
+        dataPartMag = dataPartMag / np.max(dataPartMag)
+        # convert to phase normalized
+        dataPartPhase = np.abs(dataPart)
+        dataPartPhase = dataPartPhase/ np.max(dataPartPhase)
         # cut out first part where sdr hasn't settled
-        dataPart = dataPart[1024*5:]
+        dataPartMag = dataPartMag[1024*5:]
+        dataPartPhase = dataPartPhase[1024*5:]
         # TODO try spectrogram/fft here and use freq data to train the model
         # reshape into 2d array
         wrapSize = 4096
         rowsAdded = 0
-        for i in range(0, len(dataPart)-wrapSize, wrapSize):
+        for i in range(0, len(dataPartMag)-wrapSize, wrapSize):
             rowsAdded += 1
-            data.append(dataPart[i:i+wrapSize])
+            data.append(dataPartMag[i:i+wrapSize])
+            # TODO just using mag data, try using phase as well
+            # CNN seems to be able to accept complex data, but I can't normalize it
+            #data.append(dataPartPhase[i:i+wrapSize])
         # label is first few characters on file that indicates modulation type
         fileNameStart = fileName.rfind('/')+1
         # cut the entire file path out, just keep file name
@@ -129,6 +134,25 @@ def plot(fileName, time=True, phase=False, spec=True):
         '''
 
 
+def getMetrics(model, y_test, predicted, labels, plot=False, savePlot=False):
+    # matrics report with f1 score, recall, precision
+    print(
+        f"Classification report for classifier {model}:\n"
+        f"{metrics.classification_report(y_test, predicted)}\n")
+    # accuracy
+    accuracy = accuracy_score(y_test, predicted)
+    return accuracy
+    if plot:
+        # confusion matrix
+        cm = confusion_matrix(y_test, predicted, labels=labels)
+        disp = ConfusionMatrixDisplay(confusion_matrix=cm,
+                                      display_labels=labels)
+
+        disp.plot()
+        plt.title(str(model) + " : Accuracy = " + "%.3f" % accuracy)
+        plt.show()
+
+
 def CNN(fileNames):
     # reformat data recorded by sdr into 2d array where each row is 
     # one array of one type of signal data. If multiple files
@@ -142,6 +166,13 @@ def CNN(fileNames):
     labels = le.classes_
     print("Training and testing CNN model classification for the following signals:", labels)
     targets = le.transform(targets)
+
+    # TODO remove this for real tests, just want it to speed up
+    # for svm, remove a bunch of data, no need to feed in all the data 
+    # takes too long to train
+    n = 5
+    data = data[::n]
+    targets = targets[::n]
 
     reshaped = []
     # this is the length of on row
@@ -208,14 +239,17 @@ def CNN(fileNames):
         x_train,
         y_train,
         batch_size=32,
-        epochs=3,
+        epochs=1,
         validation_data=(x_test, y_test)
     )
     
     # Evaluate the model on the test data using `evaluate`
     print("Evaluate on test data")
-    results = model.evaluate(x_test, y_test, verbose=2)
+    predicted = model.evaluate(x_test, y_test, verbose=2)
 
+    # metrics
+    # TODO metrics for CNN, how do you get predicted values from cnn?
+    #acc = getMetrics(model, y_test, predicted, labels, True, True)
     plt.plot(history.history['accuracy'], label='accuracy')
     plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
     plt.xlabel('Epoch')
@@ -243,32 +277,61 @@ def SVM(fileNames):
 
     # for svm, remove a bunch of data, no need to feed in all the data 
     # takes too long to train
-    n = 8
+    n = 5
     cutData = data[::n]
     cutTargets = targets[::n]
 
-    print("Training and testing SVM model classification for the following signals:", set(targets))
+    print("Training and testing SVM model classification" + 
+          " for the following signals:\n", set(targets))
     
     # Split data into 50% train and 50% test subsets
     X_train, X_test, y_train, y_test = train_test_split(
         cutData, cutTargets, test_size=0.3, shuffle=True, random_state=30)
 
-    # Create a classifier: a support vector classifier
-    print("Create SVM")
-    clf = svm.SVC(gamma=0.001)
+    def runSVMs(reg=1, kern='rbf'):
+        # Create a classifier: a support vector classifier
+        print("Create SVM")
+        clf = svm.SVC(C=reg, kernel=kern)
+        
+        # Learn the digits on the train subset
+        print("Fit data")
+        clf.fit(X_train, y_train)
+        
+        # Predict the value of the digit on the test subset
+        print("Predict")
+        predicted = clf.predict(X_test)
+        
+        labels = clf.classes_
+        model = clf
+        acc = getMetrics(model, y_test, predicted, labels, False, True)
+        return acc
+
+    # try out different parameters
+    #   C: regularization paramter, must be posistive, default = 1
+    #   kernel: linear, poly, rbf, sigmoid, default = rbf
+    #   degree (for poly only) default = 3
+    #   gamma: kernal coefficient for rbf, poly, and sigmoid (scale, auto, or float), default = scale
+    regularization = [i**2 for i in range(1, 5)]
+    regAcc = []
+    kernel = ['linear', 'poly', 'rbf', 'sigmoid']
+    kernelAcc = []
+    for val in regularization:
+        regAcc.append(runSVMs(reg=val))
+    for val in kernel:
+        kernelAcc.append(runSVMs(kern=val))
     
-    print(X_train.shape, y_train.shape)
-    # Learn the digits on the train subset
-    print("Fit data")
-    clf.fit(X_train, y_train)
-    
-    # Predict the value of the digit on the test subset
-    print("Predict")
-    predicted = clf.predict(X_test)
-    
-    print(
-        f"Classification report for classifier {clf}:\n"
-        f"{metrics.classification_report(y_test, predicted)}\n")
+    # plot reg metric results
+    plt.plot(regularization, regAcc)
+    plt.title("SVM regularization vs model accuracy")
+    plt.xlabel("reg")
+    plt.ylabel("accuracy")
+    plt.show()
+    # plot kernal metric results
+    plt.plot(kernel, kernelAcc)
+    plt.title("SVM kernel vs model accuracy")
+    plt.xlabel("kernel")
+    plt.ylabel("accuracy")
+    plt.show()
 
 
 def record(modId, num1k, centerFreq, plot):
@@ -338,6 +401,10 @@ if __name__ == "__main__":
             SVM(fileNames)
         elif sys.argv[1] == 'cnn':
             CNN(fileNames)
+        elif sys.argv[1] == 'randomforest':
+            randomForest(fileNames)
+        elif sys.argv[1] == 'knn':
+            KNN(fileNames)
         elif sys.argv[1] == 'getdata':
             record(*sys.argv[2:])
         elif sys.argv[1] == 'plot':
