@@ -27,6 +27,7 @@ Date Created:
 
 Authors:
 Rich Seibert
+Larry Xu
 """
 
 
@@ -45,9 +46,11 @@ from sklearn import preprocessing
 # metrics
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.metrics import accuracy_score
-# svm
+# svm, random forests, and knn
 from sklearn import datasets, svm, metrics
 from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
 # cnn
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D
@@ -60,7 +63,7 @@ from tensorflow.keras.utils import to_categorical
 
 
 
-def formatIQTimeData(fileNames):
+def formatIQTimeData(fileNames, cutAmount=0):
     # take in raw IQ samples from pred recording and preprocess
     # by doing mag, normalizing to 0-1, and then cutting it up
     data = []
@@ -93,6 +96,11 @@ def formatIQTimeData(fileNames):
         fileNameOnly = fileName[fileNameStart:]
         label = fileNameOnly[:fileNameOnly.find('_')]
         targets = np.concatenate((targets, np.array([label]*rowsAdded)))
+    # optional cut out data (used for when you want to make training faster)
+    if cutAmount > 1:
+        data = data[::cutAmount]
+        targets = targets[::cutAmount]
+
     return np.array(data), targets
 
 
@@ -141,7 +149,6 @@ def getMetrics(model, y_test, predicted, labels, plot=False, savePlot=False):
         f"{metrics.classification_report(y_test, predicted)}\n")
     # accuracy
     accuracy = accuracy_score(y_test, predicted)
-    return accuracy
     if plot:
         # confusion matrix
         cm = confusion_matrix(y_test, predicted, labels=labels)
@@ -151,13 +158,17 @@ def getMetrics(model, y_test, predicted, labels, plot=False, savePlot=False):
         disp.plot()
         plt.title(str(model) + " : Accuracy = " + "%.3f" % accuracy)
         plt.show()
+    
+    return accuracy
 
 
 def CNN(fileNames):
     # reformat data recorded by sdr into 2d array where each row is 
     # one array of one type of signal data. If multiple files
     # are input it will concatenate all of them together
-    data, targets = formatIQTimeData(fileNames)
+    # TODO remove cut for cnn
+    cut = 5
+    data, targets = formatIQTimeData(fileNames, cut)
 
     # label encoding on modulation types which are strings
     # https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.LabelEncoder.html
@@ -166,13 +177,6 @@ def CNN(fileNames):
     labels = le.classes_
     print("Training and testing CNN model classification for the following signals:", labels)
     targets = le.transform(targets)
-
-    # TODO remove this for real tests, just want it to speed up
-    # for svm, remove a bunch of data, no need to feed in all the data 
-    # takes too long to train
-    n = 5
-    data = data[::n]
-    targets = targets[::n]
 
     reshaped = []
     # this is the length of on row
@@ -260,33 +264,123 @@ def CNN(fileNames):
 
 
 def KNN(fileNames):
-    print("Not implemented yet")
+    cut = 5
+    data, targets = formatIQTimeData(fileNames, cut)
+    train_x, test_x, train_y, test_y = train_test_split(data, 
+                                                        targets, 
+                                                        test_size=0.4, 
+                                                        shuffle=True, 
+                                                        random_state=42)
+
+    accuracies = []
+    f1_scores = []
+    neighbors = []
+    for n in range(1, 30):
+        clf = KNeighborsClassifier(n_neighbors=n)
+        clf.fit(train_x, train_y)
+        pred_y = clf.predict(test_x)
+        accuracy = metrics.accuracy_score(test_y, pred_y)
+        f1 = metrics.f1_score(test_y, pred_y, average='micro')
+        
+        neighbors.append(n)
+        accuracies.append(accuracy)
+        f1_scores.append(f1)
+        
+    # plot
+    plt.xlabel("num neighbors")
+    plt.ylabel("accuracy")
+    plt.title("relationship between num neighbors and accuracy")
+    plt.plot(neighbors, accuracies)
+    plt.show()
+
+    plt.xlabel("num neighbors")
+    plt.ylabel("f1 score")
+    plt.title("relationship between num neighbors and f1 score")
+    plt.plot(neighbors, f1_scores)
+    plt.show()
     return
 
 
 def randomForest(fileNames):
-    print("Not implemented yet")
+    cut = 5
+    data, targets = formatIQTimeData(fileNames, cut)
+    train_x, test_x, train_y, test_y = train_test_split(data, 
+                                                        targets, 
+                                                        test_size=0.3, 
+                                                        shuffle=True, 
+                                                        random_state=42)
+
+    # fix num_tree = 1, experiment with depth
+    accuracies = []
+    f1_scores = []
+    depths = []
+    for d in range(1, 30):
+        clf = RandomForestClassifier(n_estimators=1, max_depth=d).fit(train_x, train_y)
+        pred_y = clf.predict(test_x)
+        accuracy = metrics.accuracy_score(test_y, pred_y)
+        f1 = metrics.f1_score(test_y, pred_y, average='micro')
+        
+        depths.append(d)
+        accuracies.append(accuracy)
+        f1_scores.append(f1)
+        
+    # plot
+    plt.xlabel("depth")
+    plt.ylabel("accuracy")
+    plt.title("relationship between depths and accuracy")
+    plt.plot(depths, accuracies)
+    plt.show()
+
+    plt.xlabel("depth")
+    plt.ylabel("f1 score")
+    plt.title("relationship between depths and f1 score")
+    plt.plot(depths, f1_scores)
+    plt.show()
+
+    # fix depth = 7, experiment with num_tree
+    accuracies = []
+    f1_scores = []
+    num_trees = []
+    for n in range(1, 30):
+        clf = RandomForestClassifier(n_estimators=n, max_depth=7).fit(train_x, train_y)
+        predicted = clf.predict(test_x)
+        accuracy = metrics.accuracy_score(test_y, predicted)
+        f1 = metrics.f1_score(test_y, predicted, average='micro')
+        
+        num_trees.append(n)
+        accuracies.append(accuracy)
+        f1_scores.append(f1)
+    
+    # plot
+    plt.xlabel("num trees")
+    plt.ylabel("accuracy")
+    plt.title("relationship between depths and accuracy")
+    plt.plot(num_trees, accuracies)
+    plt.show()
+
+    plt.xlabel("num trees")
+    plt.ylabel("f1 score")
+    plt.title("relationship between depths and f1 score")
+    plt.plot(num_trees, f1_scores)
+    plt.show()
     return
 
+    # TODO run model one more time with opitmal paramters and run getMetrics
+    acc = getMetrics(clf, test_y, predicted, clf.classes_, True, True)
 
 def SVM(fileNames):
     # reformat data recorded by sdr into 2d array where each row is 
     # one array of one type of signal data. If multiple files
     # are input it will concatenate all of them together
-    data, targets = formatIQTimeData(fileNames)
-
-    # for svm, remove a bunch of data, no need to feed in all the data 
-    # takes too long to train
-    n = 5
-    cutData = data[::n]
-    cutTargets = targets[::n]
+    cut = 5
+    data, targets = formatIQTimeData(fileNames, cut)
 
     print("Training and testing SVM model classification" + 
           " for the following signals:\n", set(targets))
     
     # Split data into 50% train and 50% test subsets
     X_train, X_test, y_train, y_test = train_test_split(
-        cutData, cutTargets, test_size=0.3, shuffle=True, random_state=30)
+        data, targets, test_size=0.3, shuffle=True, random_state=30)
 
     def runSVMs(reg=1, kern='rbf'):
         # Create a classifier: a support vector classifier
@@ -310,7 +404,8 @@ def SVM(fileNames):
     #   C: regularization paramter, must be posistive, default = 1
     #   kernel: linear, poly, rbf, sigmoid, default = rbf
     #   degree (for poly only) default = 3
-    #   gamma: kernal coefficient for rbf, poly, and sigmoid (scale, auto, or float), default = scale
+    #   gamma: kernal coefficient for rbf, poly, and sigmoid 
+    #          (scale, auto, or float), default = scale
     regularization = [i**2 for i in range(1, 5)]
     regAcc = []
     kernel = ['linear', 'poly', 'rbf', 'sigmoid']
