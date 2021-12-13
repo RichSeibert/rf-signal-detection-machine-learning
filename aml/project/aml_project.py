@@ -75,7 +75,7 @@ def formatIQTimeData(fileNames, cutAmount=0):
         dataPartMag = np.abs(dataPart)
         dataPartMag = dataPartMag / np.max(dataPartMag)
         # convert to phase normalized
-        dataPartPhase = np.abs(dataPart)
+        dataPartPhase = np.angle(dataPart)
         dataPartPhase = dataPartPhase/ np.max(dataPartPhase)
         # cut out first part where sdr hasn't settled
         dataPartMag = dataPartMag[1024*5:]
@@ -147,8 +147,8 @@ def getMetrics(model, y_test, predicted, labels, plot=False, savePlot=False):
     print(
         f"Classification report for classifier {model}:\n"
         f"{metrics.classification_report(y_test, predicted)}\n")
-    # accuracy
-    accuracy = accuracy_score(y_test, predicted)
+    # f1 score
+    f1Score = metrics.f1_score(y_test, predicted, average='micro')
     if plot:
         # confusion matrix
         cm = confusion_matrix(y_test, predicted, labels=labels)
@@ -156,10 +156,10 @@ def getMetrics(model, y_test, predicted, labels, plot=False, savePlot=False):
                                       display_labels=labels)
 
         disp.plot()
-        plt.title(str(model) + " : Accuracy = " + "%.3f" % accuracy)
+        plt.title(str(model) + " : F1 Score= " + "%.3f" % f1Score)
         plt.show()
     
-    return accuracy
+    return f1Score
 
 
 def CNN(fileNames):
@@ -213,10 +213,34 @@ def CNN(fileNames):
     model.add(MaxPooling2D((2, 2)))
     # 2nd Maxpooling layer
     model.add(MaxPooling2D((2, 2)))
+
+    # TODO add later
+    '''
+    # Convolution layer
+    model.add (
+        Conv2D(sqSize, (3, 3),
+        activation = 'relu', kernel_initializer = 'he_uniform' ,
+        input_shape = (sqSize , sqSize , 1 ))
+    )
+    # 2nd Convolution layer
+    model.add (
+        Conv2D(sqSize*2, (3, 3),
+        activation = 'relu', kernel_initializer = 'he_uniform' ,
+        input_shape = (sqSize , sqSize, 1 ))
+    )
+    # Maxpooling layer
+    model.add(MaxPooling2D((2, 2)))
+    # 2nd Maxpooling layer
+    model.add(MaxPooling2D((2, 2)))
+    '''
+
+    # TODO add in more?
+
     # Flatten output
     model.add(Flatten())
-    # Dropout later
-    model.add(Dropout(0.5))
+    # TODO add later
+    # Dropout layer
+    # model.add(Dropout(0.5))
     # Dense layerof 100 neurons
     model.add(
         Dense(100,
@@ -237,13 +261,13 @@ def CNN(fileNames):
 
     model.summary()
 
-    # run for 10 epochs
+    # run 
     print("Fit model on training data")
     history = model.fit(
         x_train,
         y_train,
         batch_size=32,
-        epochs=1,
+        epochs=10,
         validation_data=(x_test, y_test)
     )
     
@@ -253,7 +277,7 @@ def CNN(fileNames):
 
     # metrics
     # TODO metrics for CNN, how do you get predicted values from cnn?
-    #acc = getMetrics(model, y_test, predicted, labels, True, True)
+    # f1Score = getMetrics(model, y_test, predicted, labels, True, True)
     plt.plot(history.history['accuracy'], label='accuracy')
     plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
     plt.xlabel('Epoch')
@@ -268,37 +292,29 @@ def KNN(fileNames):
     data, targets = formatIQTimeData(fileNames, cut)
     train_x, test_x, train_y, test_y = train_test_split(data, 
                                                         targets, 
-                                                        test_size=0.4, 
+                                                        test_size=0.3, 
                                                         shuffle=True, 
                                                         random_state=42)
 
-    accuracies = []
     f1_scores = []
     neighbors = []
     for n in range(1, 30):
         clf = KNeighborsClassifier(n_neighbors=n)
         clf.fit(train_x, train_y)
-        pred_y = clf.predict(test_x)
-        accuracy = metrics.accuracy_score(test_y, pred_y)
-        f1 = metrics.f1_score(test_y, pred_y, average='micro')
+        predicted = clf.predict(test_x)
+        f1 = metrics.f1_score(test_y, predicted, average='micro')
         
         neighbors.append(n)
-        accuracies.append(accuracy)
         f1_scores.append(f1)
         
-    # plot
-    plt.xlabel("num neighbors")
-    plt.ylabel("accuracy")
-    plt.title("relationship between num neighbors and accuracy")
-    plt.plot(neighbors, accuracies)
-    plt.show()
-
     plt.xlabel("num neighbors")
     plt.ylabel("f1 score")
     plt.title("relationship between num neighbors and f1 score")
     plt.plot(neighbors, f1_scores)
     plt.show()
-    return
+
+    # make confusion matrix
+    f1Score = getMetrics(clf, test_y, predicted, clf.classes_, True, True)
 
 
 def randomForest(fileNames):
@@ -311,68 +327,52 @@ def randomForest(fileNames):
                                                         random_state=42)
 
     # fix num_tree = 1, experiment with depth
-    accuracies = []
     f1_scores = []
     depths = []
     for d in range(1, 30):
         clf = RandomForestClassifier(n_estimators=1, max_depth=d).fit(train_x, train_y)
         pred_y = clf.predict(test_x)
-        accuracy = metrics.accuracy_score(test_y, pred_y)
         f1 = metrics.f1_score(test_y, pred_y, average='micro')
-        
         depths.append(d)
-        accuracies.append(accuracy)
         f1_scores.append(f1)
-        
-    # plot
-    plt.xlabel("depth")
-    plt.ylabel("accuracy")
-    plt.title("relationship between depths and accuracy")
-    plt.plot(depths, accuracies)
-    plt.show()
-
+    
     plt.xlabel("depth")
     plt.ylabel("f1 score")
     plt.title("relationship between depths and f1 score")
     plt.plot(depths, f1_scores)
     plt.show()
-
+    
     # fix depth = 7, experiment with num_tree
-    accuracies = []
     f1_scores = []
     num_trees = []
     for n in range(1, 30):
         clf = RandomForestClassifier(n_estimators=n, max_depth=7).fit(train_x, train_y)
         predicted = clf.predict(test_x)
-        accuracy = metrics.accuracy_score(test_y, predicted)
         f1 = metrics.f1_score(test_y, predicted, average='micro')
-        
         num_trees.append(n)
-        accuracies.append(accuracy)
         f1_scores.append(f1)
     
-    # plot
-    plt.xlabel("num trees")
-    plt.ylabel("accuracy")
-    plt.title("relationship between depths and accuracy")
-    plt.plot(num_trees, accuracies)
-    plt.show()
-
     plt.xlabel("num trees")
     plt.ylabel("f1 score")
-    plt.title("relationship between depths and f1 score")
+    plt.title("relationship between num trees and f1 score")
     plt.plot(num_trees, f1_scores)
     plt.show()
-    return
+    
+    # run again with the best parameter
+    #clf = RandomForestClassifier(n_estimators=30, max_depth=10).fit(train_x, train_y)
+    clf = RandomForestClassifier().fit(train_x, train_y)
+    predicted = clf.predict(test_x)
+    f1 = metrics.f1_score(test_y, predicted, average='micro')
 
-    # TODO run model one more time with opitmal paramters and run getMetrics
-    acc = getMetrics(clf, test_y, predicted, clf.classes_, True, True)
+    # make confusion matrix
+    f1Score = getMetrics(clf, test_y, predicted, clf.classes_, True, True)
+
 
 def SVM(fileNames):
     # reformat data recorded by sdr into 2d array where each row is 
     # one array of one type of signal data. If multiple files
     # are input it will concatenate all of them together
-    cut = 5
+    cut = 10
     data, targets = formatIQTimeData(fileNames, cut)
 
     print("Training and testing SVM model classification" + 
@@ -382,51 +382,53 @@ def SVM(fileNames):
     X_train, X_test, y_train, y_test = train_test_split(
         data, targets, test_size=0.3, shuffle=True, random_state=30)
 
-    def runSVMs(reg=1, kern='rbf'):
+    def runSVMs(reg=4, kern='rbf'):
         # Create a classifier: a support vector classifier
-        print("Create SVM")
         clf = svm.SVC(C=reg, kernel=kern)
-        
         # Learn the digits on the train subset
-        print("Fit data")
         clf.fit(X_train, y_train)
-        
         # Predict the value of the digit on the test subset
-        print("Predict")
         predicted = clf.predict(X_test)
-        
         labels = clf.classes_
         model = clf
-        acc = getMetrics(model, y_test, predicted, labels, False, True)
-        return acc
+        f1 = metrics.f1_score(y_test, predicted, average='micro')
+        return f1
 
     # try out different parameters
     #   C: regularization paramter, must be posistive, default = 1
     #   kernel: linear, poly, rbf, sigmoid, default = rbf
     #   degree (for poly only) default = 3
-    #   gamma: kernal coefficient for rbf, poly, and sigmoid 
+    #   gamma: kernel coefficient for rbf, poly, and sigmoid 
     #          (scale, auto, or float), default = scale
     regularization = [i**2 for i in range(1, 5)]
-    regAcc = []
+    regF1Scores = []
     kernel = ['linear', 'poly', 'rbf', 'sigmoid']
-    kernelAcc = []
+    kernelF1Scores= []
     for val in regularization:
-        regAcc.append(runSVMs(reg=val))
+        regF1Scores.append(runSVMs(reg=val))
     for val in kernel:
-        kernelAcc.append(runSVMs(kern=val))
+        kernelF1Scores.append(runSVMs(kern=val))
     
     # plot reg metric results
-    plt.plot(regularization, regAcc)
-    plt.title("SVM regularization vs model accuracy")
+    plt.plot(regularization, regF1Scores)
+    plt.title("SVM regularization vs F1 score")
     plt.xlabel("reg")
-    plt.ylabel("accuracy")
+    plt.ylabel("F1 score")
     plt.show()
-    # plot kernal metric results
-    plt.plot(kernel, kernelAcc)
-    plt.title("SVM kernel vs model accuracy")
+    # plot kernel metric results
+    plt.plot(kernel, kernelF1Scores)
+    plt.title("SVM kernel vs F1 score")
     plt.xlabel("kernel")
-    plt.ylabel("accuracy")
+    plt.ylabel("F1 Score")
     plt.show()
+
+    # train again with best parameters
+    clf = svm.SVC(C=4, kernel='rbf')
+    clf.fit(X_train, y_train)
+    predicted = clf.predict(X_test)
+    
+    # make confusion matrix
+    f1Score = getMetrics(clf, y_test, predicted, clf.classes_, True, True)
 
 
 def record(modId, num1k, centerFreq, plot):
