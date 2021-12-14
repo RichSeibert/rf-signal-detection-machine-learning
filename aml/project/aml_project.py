@@ -60,6 +60,7 @@ from tensorflow.keras.layers import Flatten
 from tensorflow.keras.optimizers import SGD
 from tensorflow.keras.layers import Dropout
 from tensorflow.keras.utils import to_categorical
+from tensorflow.keras import regularizers
 
 
 
@@ -166,8 +167,7 @@ def CNN(fileNames):
     # reformat data recorded by sdr into 2d array where each row is 
     # one array of one type of signal data. If multiple files
     # are input it will concatenate all of them together
-    # TODO remove cut for cnn
-    cut = 5
+    cut = 1
     data, targets = formatIQTimeData(fileNames, cut)
 
     # label encoding on modulation types which are strings
@@ -189,7 +189,8 @@ def CNN(fileNames):
     
     # Split data into 50% train and 50% test subsets
     x_train, x_test, y_train, y_test = train_test_split(
-        data, targets, test_size=0.5, shuffle=True, random_state=42)
+        data, targets, test_size=0.1, shuffle=True, random_state=42)
+    y_test_orig = y_test
     
     # convert to OHE
     y_train = to_categorical(y_train)
@@ -234,16 +235,14 @@ def CNN(fileNames):
     model.add(MaxPooling2D((2, 2)))
     '''
 
-    # TODO add in more?
-
     # Flatten output
     model.add(Flatten())
-    # TODO add later
     # Dropout layer
-    # model.add(Dropout(0.5))
+    model.add(Dropout(0.5))
     # Dense layerof 100 neurons
     model.add(
         Dense(100,
+        kernel_regularizer=regularizers.l1_l2(l1=1e-5, l2=1e-4),
         activation = 'relu',
         kernel_initializer = 'he_uniform')
     )
@@ -266,20 +265,28 @@ def CNN(fileNames):
     history = model.fit(
         x_train,
         y_train,
-        batch_size=32,
+        batch_size=8,
         epochs=10,
         validation_data=(x_test, y_test)
     )
     
     # Evaluate the model on the test data using `evaluate`
-    print("Evaluate on test data")
-    predicted = model.evaluate(x_test, y_test, verbose=2)
+    #print("Evaluate on test data")
+    #predicted = model.evaluate(x_test, y_test, verbose=2)
 
-    # metrics
-    # TODO metrics for CNN, how do you get predicted values from cnn?
-    # f1Score = getMetrics(model, y_test, predicted, labels, True, True)
+    # metrics, using sklearn instead of keras, have to re-predict the data again
+    # predict crisp classes for test set
+    predicted = model.predict(x_test) 
+    predicted = np.argmax(predicted, axis=1)
+    # remap to label strings
+    predicted = le.inverse_transform(predicted)
+    # remap y_test to label string
+    y_test_orig = le.inverse_transform(y_test_orig)
+
+    f1Score = getMetrics(model, y_test_orig, predicted, labels, True, True)
     plt.plot(history.history['accuracy'], label='accuracy')
     plt.plot(history.history['val_accuracy'], label = 'val_accuracy')
+    plt.title("CNN: Epoch vs Accuracy")
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy')
     plt.ylim([0.5, 1])
@@ -307,9 +314,9 @@ def KNN(fileNames):
         neighbors.append(n)
         f1_scores.append(f1)
         
-    plt.xlabel("num neighbors")
-    plt.ylabel("f1 score")
-    plt.title("relationship between num neighbors and f1 score")
+    plt.xlabel("N neighbors")
+    plt.ylabel("F1 score")
+    plt.title("KNN: N neighbors vs. f1 score")
     plt.plot(neighbors, f1_scores)
     plt.show()
 
@@ -337,8 +344,8 @@ def randomForest(fileNames):
         f1_scores.append(f1)
     
     plt.xlabel("depth")
-    plt.ylabel("f1 score")
-    plt.title("relationship between depths and f1 score")
+    plt.ylabel("F1 score")
+    plt.title("Random Forests: depths vs. F1 score")
     plt.plot(depths, f1_scores)
     plt.show()
     
@@ -352,9 +359,9 @@ def randomForest(fileNames):
         num_trees.append(n)
         f1_scores.append(f1)
     
-    plt.xlabel("num trees")
-    plt.ylabel("f1 score")
-    plt.title("relationship between num trees and f1 score")
+    plt.xlabel("N trees")
+    plt.ylabel("F1 score")
+    plt.title("Random Forests: N trees vs. F1 score")
     plt.plot(num_trees, f1_scores)
     plt.show()
     
@@ -411,13 +418,13 @@ def SVM(fileNames):
     
     # plot reg metric results
     plt.plot(regularization, regF1Scores)
-    plt.title("SVM regularization vs F1 score")
-    plt.xlabel("reg")
+    plt.title("SVM: regularization vs F1 score")
+    plt.xlabel("regularization")
     plt.ylabel("F1 score")
     plt.show()
     # plot kernel metric results
     plt.plot(kernel, kernelF1Scores)
-    plt.title("SVM kernel vs F1 score")
+    plt.title("SVM: kernel vs F1 score")
     plt.xlabel("kernel")
     plt.ylabel("F1 Score")
     plt.show()
