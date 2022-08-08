@@ -27,7 +27,6 @@ Date Created:
 
 Authors:
 Rich Seibert
-Larry Xu
 """
 
 
